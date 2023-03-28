@@ -1,6 +1,9 @@
+import math
 import os
+from site import check_enableusersite
 from PIL import Image, ImageDraw
 import pandas as pd
+import numpy as np
 images = []
 
 #-Open the maze file and output a numpy array... returns numpy array
@@ -16,7 +19,7 @@ def OpenMaze(filename):
         data = data.values
     except fileNotFoundException:
         print("File not found")
-    return data
+    return data;
 
 #-Scan locations by searching down columns... returns array[start Location, goal Location, list of wall locations]
 def ScanMaze(maze):
@@ -35,6 +38,10 @@ def ScanMaze(maze):
                 wallList.append(wall)
     return [start, goal, wallList]
 
+#-Add a manhattan distance heuristic
+def ManhattanDistance(current, goal):
+    return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
+
 #-Simplify maze.. returns simplified maze array with only 0's, 1's, 2's, and 3's (0 = open, 1 = wall, 2 = start, 3 = goal)
 def SimplifyMaze(maze):
     for i in range(len(maze)):
@@ -49,28 +56,86 @@ def SimplifyMaze(maze):
                 maze[i][j] = 0
     return maze
 
-#-Check the surrounding 'nodes', 
-# k:    number step we're on
-# maze: path we've taken
+#-Check the surrounding 'nodes',
+# k:            a counter for the amount of nodes we have encountered
+# maze:         array of 0s and 1s: 1s are walls and 0s are spaces
 def MakeStep(k, maze):
-    for i in range(len(maze)):
-        for j in range(len(maze[i])):
-            if maze[i][j] == k:
-                # above
-                if i>0 and maze[i-1][j] == 0 and a[i-1][j] == 0:
-                    maze[i-1][j] = k + 1
-                # left
-                if j>0 and maze[i][j-1] == 0 and a[i][j-1] == 0:
-                    maze[i][j-1] = k + 1
-                # down
-                if i<len(maze)-1 and maze[i+1][j] == 0 and a[i+1][j] == 0:
-                    maze[i+1][j] = k + 1
-                # right
-                if j<len(maze[i])-1 and maze[i][j+1] == 0 and a[i][j+1] == 0:
-                    maze[i][j+1] = k + 1
+    open = []
+    closed = []
+    # push start node
+    open.append([start[0],start[1], 0, 0, 0])
+    #print(end)
+
+    maxDepth = 0
+
+    # while open has something in it
+    while(open):
+        # get minimum f value (g + h) and remove from list
+        q = min(open, key=lambda x: x[2] + x[3])
+        open.remove(q)
+
+        if q[4] > maxDepth:
+            maxDepth = q[4]
+        
+        k += 1
+
+        #print('step:', k, 'at', (q[0]+1,q[1]+1))
+        #print('f:', q[2]+q[3])
+        maze[q[0]][q[1]] = k
+        g = q[2]
+        h = q[3]
+
+        successor = []
+        
+        # above
+        successor.append([q[0]-1, q[1], q[2]+1, 0, q[4]+1])
+        successor[0][3] = ManhattanDistance((successor[0][0], successor[0][1]), end)
+        # left
+        successor.append([q[0], q[1]-1, q[2]+1, 0, q[4]+1])
+        successor[1][3] = ManhattanDistance((successor[1][0], successor[1][1]), end)
+        # down
+        successor.append([q[0]+1, q[1], q[2]+1, 0, q[4]+1])
+        successor[2][3] = ManhattanDistance((successor[2][0], successor[2][1]), end)
+        # right
+        successor.append([q[0], q[1]+1, q[2]+1, 0, q[4]+1])
+        successor[3][3] = ManhattanDistance((successor[3][0], successor[3][1]), end)
+
+        endFound = False
+        
+        for node in successor:
+            # if we found end goal
+            if [node[0], node[1]] == end:
+                maze[end[0]][end[1]] = 1
+                #print('end goal found')
+                endFound = True
+                break
+            
+            # If we find a wall
+            if a[node[0]][node[1]] == 1:
+                #print((node[0]+1,node[1]+1), 'is wall')
+                continue
+
+            # if location has been visited
+            if (node[0], node[1]) in closed:
+                #print((node[0]+1,node[1]+1), 'visited')
+                continue
+
+            # if we are already visiting a location
+            if any(sublist[0] == node[0] and sublist[1] == node[1] for sublist in open):
+                #print('visiting', (node[0]+1,node[1]+1))
+                continue
+            
+            #print('appending', (node[0]+1,node[1]+1))
+            open.append(node)
+
+        closed.append((q[0], q[1]))
+        DrawMatrix(a, maze)
+        if endFound:
+            return maxDepth
+        #print()
 
 
-def DrawMatrix(a,maze, thePath = []):
+def DrawMatrix(a, maze, thePath = []):
     #-Perform setup for graphical display of maze
     zoom = 15
     borders = 4
@@ -108,8 +173,6 @@ def getMazeFileName():
     return 'Maze/'+mazeFile+'.lay'
 
 def StartAnalysis():
-    nodesExpanded = len(a) * len(a[0])
-
     #-Create an empty matrix to store the path
     maze = []
     for i in range(len(a)):
@@ -119,53 +182,41 @@ def StartAnalysis():
 
     #-Save the start point, initialize counter variable (k)
     i,j = start
-    maze[i][j] = 1
+    maze[i][j] = -1
     k = 0
-    maxDepth = 0
 
     #-Makes steps, until it reaches the end. Then it draws the current state of the matrix
-    while maze[end[0]][end[1]] == 0:
-        k += 1
-        MakeStep(k, maze)
-        DrawMatrix(a, maze)
-        if k > maxDepth:
-            maxDepth = k
+    maxDepth = MakeStep(k, maze)
+    nodesExpanded = k
 
     #-Save the end point, initialize counter variable (k)
-    i, j = end
     k = maze[i][j]
 
     #-Retrace our steps to redraw path to start
-    print(maxDepth)
-    maze, thePath, maxDepth = retraceSteps(maze, i, j, k, maxDepth)
+    maze, thePath, maxDepth = retraceSteps(maze, end, k, maxDepth)
     
     return maze, thePath, nodesExpanded, maxDepth
 
 #-Retrace our steps to redraw path to start
-def retraceSteps(maze, i, j, k, maxDepth):
-    thePath = [(i,j)]
-    while k > 1:
-        if i > 0 and maze[i-1][j] == k-1:
-            i, j = i-1, j
-            thePath.append((i, j))
-            k -= 1
-        elif j > 0 and maze[i][j-1] == k-1:
-            i, j = i, j-1
-            thePath.append((i, j))
-            k -= 1
-        elif i < len(maze)-1 and maze[i+1][j] == k-1:
-            i, j = i+1, j
-            thePath.append((i, j))
-            k -= 1
-        elif j < len(maze[i])-1 and maze[i][j+1] == k-1:
-            i, j = i, j+1
-            thePath.append((i, j))
-            k -= 1
+# maze:     array of 0s and 1s: 1s are walls and 0s are spaces with step numbers inserted
+# cursor:   value we are looking at (starts at end)
+# k:        the step value at the maze's endpoint
+# maxDepth: the maximum depth we traversed
+def retraceSteps(maze, cursor, k, maxDepth):
+    thePath = [cursor]
+    while cursor != start:
+        # find the least number around us that is not 0
+        coordPairs = [(cursor[0]-1, cursor[1]), (cursor[0], cursor[1]-1), (cursor[0]+1, cursor[1]), (cursor[0], cursor[1]+1)]
+        print((cursor[0]+1, cursor[1]+1), maze[cursor[0]][cursor[1]])
+        cursor = min(coordPairs, key=lambda x: maze[x[0]][x[1]] if maze[x[0]][x[1]] != 0 and maze[x[0]][x[1]] != 1 else float('inf'))
+        thePath.append(cursor)
         DrawMatrix(a, maze, thePath)
 
         if maxDepth < len(thePath):
             maxDepth = len(thePath)
+
     return maze, thePath, maxDepth
+
 
 if __name__ == '__main__':
     mazeFile = getMazeFileName()
@@ -202,6 +253,7 @@ if __name__ == '__main__':
     print("Here is the maximum size of the fringe: ", len(a))
 
     #-Output the maze as a GIF animation
-    images[0].save(mazeFile[5:-4]+'.gif',
+    images[0].save(mazeFile[5:-4]+'-ASTAR.gif',
                 save_all=True, append_images=images[1:],
                 optimize=False, duration=1, loop=0)
+
